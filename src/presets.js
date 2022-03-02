@@ -32,6 +32,7 @@ const markdown = require('./markdown');
 const yaml = require('yaml');
 const execSync = require('child_process').execSync;
 const { Octokit } = require('@octokit/rest');
+const childProcess = require('child_process');
 
 const octokit = new Octokit({
 	debug: Boolean(process.env.DEBUG),
@@ -150,6 +151,34 @@ const getNestedChangeLog = (
 		});
 };
 
+const resolveTag = (shash, upstream) => {
+	const result = childProcess.spawnSync(
+		'git',
+		['describe', '--abbrev=0', shash],
+		{
+			cwd: `${process.cwd()}/layers/${upstream}`,
+		},
+	);
+
+	return result.stdout.toString().trim();
+};
+
+const processSubmoduleOutput = (data, upstream) => {
+	var lines = `${data}`.split('\n');
+	for (var i = 0; i < lines.length; i++) {
+		let line = lines[i];
+		const regexp = new RegExp(
+			`Submodule layers/${upstream} (\\S+)\\.\\.(\\S+):`,
+		);
+		const match = line.match(regexp);
+		if (match) {
+			const previousVersion = resolveTag(match[1], upstream);
+			const newVersion = resolveTag(match[2], upstream);
+			return [previousVersion, newVersion];
+		}
+	}
+};
+
 const attachNestedChangelog = (upstreams, commit, callback) => {
 	async.map(
 		upstreams,
@@ -161,6 +190,30 @@ const attachNestedChangelog = (upstreams, commit, callback) => {
 			if (match) {
 				const currentVersion = match[1];
 				const targetVersion = match[2];
+				return getNestedChangeLog(
+					upstream,
+					commit,
+					currentVersion,
+					targetVersion,
+					cb,
+				);
+			}
+			const regexp1 = new RegExp(`[Uu]pdate (layers)?/${upstream.pattern}`);
+			const match1 = commit.body.match(regexp1);
+			if (match1) {
+				const result = childProcess.spawnSync('git', [
+					'log',
+					'--oneline',
+					'--submodule',
+					'-U0',
+					'HEAD^1..HEAD',
+				]);
+				const response = processSubmoduleOutput(
+					result.stdout,
+					`${upstream.pattern}`,
+				);
+				const currentVersion = response[0];
+				const targetVersion = response[1];
 				return getNestedChangeLog(
 					upstream,
 					commit,
