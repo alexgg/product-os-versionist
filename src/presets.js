@@ -131,6 +131,9 @@ const getNestedChangeLog = (
 	callback,
 ) => {
 	const { owner, repo, ref = 'master' } = options;
+	console.log(
+		`[AG] getNestedChangeLog startVersion ${startVersion} endVersion ${endVersion}`,
+	);
 
 	const blob = github
 		.getChangelogYML(owner, repo, ref, octokit)
@@ -142,6 +145,7 @@ const getNestedChangeLog = (
 				startVersion,
 				endVersion,
 			);
+			console.log(`[AG] getNestedChangeLog: nested ${nested}`);
 			return callback(null, nested);
 		})
 		.catch((error) => {
@@ -180,14 +184,17 @@ const processSubmoduleOutput = (data, upstream) => {
 };
 
 const attachNestedChangelog = (upstreams, commit, callback) => {
+	console.log(`[AG] attachNestedChangelog`);
 	async.map(
 		upstreams,
 		(upstream, cb) => {
+			console.log(`[AG] attachNestedChangelog ${upstream.pattern}`);
 			const regexp = new RegExp(
 				`[Uu]pdate ${upstream.pattern} from (\\S+) to (\\S+)`,
 			);
 			const match = commit.body.match(regexp);
 			if (match) {
+				console.log('[AG] Match legacy');
 				const currentVersion = match[1];
 				const targetVersion = match[2];
 				return getNestedChangeLog(
@@ -199,8 +206,12 @@ const attachNestedChangelog = (upstreams, commit, callback) => {
 				);
 			}
 			const regexp1 = new RegExp(`[Uu]pdate (layers)?/${upstream.pattern}`);
+			console.log(
+				`[AG] attachNestedChangelog: body ${commit.body} regex1 ${regexp1}`,
+			);
 			const match1 = commit.body.match(regexp1);
 			if (match1) {
+				console.log('[AG] Match new');
 				const result = childProcess.spawnSync('git', [
 					'log',
 					'--oneline',
@@ -214,6 +225,9 @@ const attachNestedChangelog = (upstreams, commit, callback) => {
 				);
 				const currentVersion = response[0];
 				const targetVersion = response[1];
+				console.log(
+					`[AG] currentVersion ${currentVersion} targetVersion ${targetVersion}`,
+				);
 				return getNestedChangeLog(
 					upstream,
 					commit,
